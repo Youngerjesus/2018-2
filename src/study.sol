@@ -25,24 +25,47 @@ contract Study {
     string name;
     string description;
     
+
     address public manager;
     address[] public members;
     mapping(address => uint) memberBalance;
     uint balance;
     uint studyDeposit;
-    
+    uint public memberLimit; //스터디 모집정원 수 
+    uint public memberCount; //스터디 참여한 인원 수 
+
     struct Assignment {
         uint due;
         string name;
         string description;
-        //uint extendApprovers;
+        //uint extendApprovers; 
     }
+    
+    //member 정보 추가로 간단한 개인정보 닉네임 같은것도 추가할 것인지 
+    struct MemberDetail{
+        string name;
+        string birth;
+        string sex;
+        uint attendanceRate; //출석률
+        mapping(uint => bool) approve; 
+    }
+ 
+    uint public studyOpenTime;
+    uint public studyCloseTime;
     
     uint public recruitStart;
     uint public recruitEnd;
     bool recruiting;
+
+    uint public NextMeeting; //다음 모임 출석시간
+    uint public TotalMeeting; // 총 모임 횟수
+    uint public TodayAttendance; // 그 날 모임 참여인원 
+
+     
     Assignment[] public assignments;
-    
+    mapping(address=>MemberDetail) member; 
+    mapping(address => uint8 ) WhiteList; // 스터디 참여했다! 라는것 
+
     // 스터디 시스템 설정
     // 1. 관리자 권한 한정자 (manager가 아니면 할 수 없게 함)
     // 2. 생성자 - uint로 일수를 받음
@@ -55,14 +78,39 @@ contract Study {
         require(msg.sender == manager);
         _;
     }
-    
-    constructor (uint n) public {
+
+    constructor (uint n, uint _studyOpenTime, uint _studyCloseTime, uint _memberLimit) public {
         manager = msg.sender;
-        recruitStart = now;
+        studyOpenTime = _studyOpenTime; 
+        studyCloseTime = _studyCloseTime; 
+        recruitStart = now; //
         recruitEnd = recruitStart + n*1 days; 
         recruiting = true;
+        memberLimit = _memberLimit; 
     }
-    
+
+    function setMemberLimit (uint _newMemberLimit) public onlyManager {
+        memberLimit = _newMemberLimit;
+    }
+
+    //출석 
+    function attendance() public {
+        require(block.timestamp >= NextMeeting && block.timestamp <= NextMeeting + 5 minutes);
+        member[msg.sender].attendanceRate += 1;  
+        TodayAttendance += 1; 
+    }
+
+    // 다음번 모임 시간 정하기
+    function setNextMeeting(uint _NextMeeting) public onlyManager {
+        NextMeeting = _NextMeeting;
+        TotalMeeting += 1; 
+        //TodayAttendance = 0; //다음번 모임 참여에서 초기화하고 진행하기 위해서  
+    }
+
+    function isOpen() public view returns(bool) {
+        return block.timestamp >= studyOpenTime && block.timestamp <  studyCloseTime;
+    }
+
     /* 모집기간 종료일자 어떤 값으로 넣어야 하는지 정해지면 이걸로 바꿔보도록 하자.
     //
     constructor (uint _recruitDueDate, uint _studyDueDate, uint _studyDeposit) {
@@ -76,6 +124,7 @@ contract Study {
         _;
     }
 
+    
     function joinStudy() public payable {
         require(msg.value == studyDeposit);
         address(this).tranfer(msg.value);
@@ -109,14 +158,26 @@ contract Study {
         recruiting = false;
     }
 
+    
     mapping(address=>bool) checkMember;
 
-    function enrollStudy() public payable {
-        require(msg.value > 2.00001 ether);
+    function enrollStudy (string memory _name, string memory _birth, string memory _sex) public payable {
+        require(msg.value > 2.00001 ether); 
         require(!checkMember[msg.sender]);
         require(recruiting);
+        require(memberCount <= memberLimit); 
+        require(isOpen()); 
         checkMember[msg.sender] = true;
         members.push(msg.sender);
+
+        //스터디 참여하는 사람들 기본적인 정보 추가  닉네임같은것도 고려할지
+        MemberDetail memory Member = member[msg.sender]; 
+        Member.name = _name;
+        Member.birth = _birth;
+        Member.sex = _sex; 
+
+        memberCount += 1; //참여한 사람 +1  study 정원이 있으면 좋을거같아서 
+        WhiteList[msg.sender] = 1;  //enroll 했다!
     }
 
     /* public으로 정의시 기본으로 생기는 함수 (굳이 작성 불필요)
@@ -130,25 +191,35 @@ contract Study {
         Assignment memory assignment = Assignment({
             due: _due,
             name: _name,
-            description: _description,
+            description: _description
          //extendApprovers: 0
         });
         assignments.push(assignment);
     }
     
-    /*
+    /* 
+ 
     mapping(address => bool) extendApprovers;
 
-    function extendApprove(uint index) public {
+  
+    function extendApprove(uint index) public returns(uint) {
         require(extendApprovers[msg.sender] != true);
+        //require(member[msg.sender][index] != true); //각 과제애대한 투표권
+        //member[msg.sender][index] = true;
+
         assignments[index].extendApprovers += 1;
         extendApprovers[msg.sender] = true;
     }
 
+    
     function extendAssignment(uint index, uint extendedDue) public onlyManager {
-        require(assignments[index].extendApprovers > members.length/2);
-        assignments[index].due = extendedDue;
-        assignments[index].extendApprovers = 0;
+        require(assignments[index].extendApprovers > members.length/2); 
+        //require(assignments[index].extendApprovers > Todayattendance/2); 오늘 모임에 참여한 사람 수의 절반이상  
+         
+        if(assignments.length > index) {
+            assignments[index].due = extendedDue;
+            assignments[index].extendApprovers = 0;
+        }
     }
     */
 
